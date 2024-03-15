@@ -16,16 +16,25 @@
 */
 package org.recompile.freej2me;
 
-/*
-	FreeJ2ME - AWT
-*/
-
 import org.recompile.mobile.*;
+
+import java.awt.Image;
+import java.awt.Canvas;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
+
 import java.io.File;
+import java.util.Arrays;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.ProcessBuilder;
+
 import java.io.FilenameFilter;
 import javax.imageio.ImageIO;
 import javax.microedition.lcdui.Display;
@@ -35,337 +44,119 @@ import java.util.Map;
 
 public class FreeJ2ME
 {
-	public static void main(String args[])
-	{
-		for (String arg: args) {
-			if (arg.equals("-help") || arg.equals("--help")) {
-				printHelp();
-				return;
-			}
-		}
 
+	public static void main(String[] args)
+	{
 		FreeJ2ME app = new FreeJ2ME(args);
 	}
 
-	private static void printHelp() {
-		System.out.println("freej2me.jar [-w width] [-h height] [-scale x] [-ap | --app-property key=value]... [-sp | --system-property key=value]... [-c | --config key=value]... [-m main_class] [-ff | --force-fullscreen] [-fv | --force-volatile] JAR_OR_JAD_FILE");
-	}
+	private SDL sdl;
 
-	private Frame main;
 	private int lcdWidth;
 	private int lcdHeight;
-	private int scaleFactor = 1;
-
-	private LCD lcd;
-
-	private int xborder;
-	private int yborder;
-
-	private PlatformImage img;
-
 	private Config config;
 	private boolean useNokiaControls = false;
 	private boolean useSiemensControls = false;
 	private boolean useMotorolaControls = false;
 	private boolean rotateDisplay = false;
 	private int limitFPS = 0;
-	
+
 	private boolean[] pressedKeys = new boolean[128];
+
+	private Runnable painter;
 
 	public FreeJ2ME(String args[])
 	{
 		lcdWidth = 240;
 		lcdHeight = 320;
-		scaleFactor = Toolkit.getDefaultToolkit().getScreenSize().height > 980 ? 3 : 2;
+		String mainClassOverride = null;
 		Map<String, String> appProperties = new HashMap<>();
 		Map<String, String> systemPropertyOverrides = new HashMap<>();
 		Map<String, String> configOverrides = new HashMap<>();
-		String fileName = null;
-		String mainClassOverride = null;
-		boolean dimensionsSet = false;
-		boolean forceFullscreen = false;
-		boolean forceVolatile = false;
 
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-				case "-w":
-				case "--width":
-					lcdWidth = Integer.parseInt(args[++i]);
-					dimensionsSet = true;
-					break;
-				case "-h":
-				case "--height":
-					lcdHeight = Integer.parseInt(args[++i]);
-					dimensionsSet = true;
-					break;
-				case "-s":
-				case "--scale":
-					scaleFactor = Integer.parseInt(args[++i]);
-					break;
-				case "-m":
-				case "--main-class":
-					mainClassOverride = args[++i];
-					break;
-				case "-ff":
-				case "--force-fullscreen":
-					forceFullscreen = true;
-					break;
-				case "-fv":
-				case "--force-volatile":
-					forceVolatile = true;
-					break;
-				case "-ap":
-				case "--app-property":
-					processKeyValuePairs(args, appProperties, ++i);
-					break;
-				case "-sp":
-				case "--system-property":
-					processKeyValuePairs(args, systemPropertyOverrides, ++i);
-					break;
-				case "-c":
-				case "--config":
-					processKeyValuePairs(args, configOverrides, ++i);
-					break;
-				default:
-					fileName = args[i];
-			}
-		}
-
-		if (dimensionsSet) {
-			configOverrides.put("width", ""+lcdWidth);
-			configOverrides.put("height", ""+lcdHeight);		
-		}
-
-		if (forceFullscreen) {
-			configOverrides.put("forceFullscreen", "on");
-		}
-		
-		if (forceVolatile) {
-			configOverrides.put("forceVolatileFields", "on");
-		}
-
-		main = new Frame("FreeJ2ME");
-		main.setSize(350,450);
-		main.setBackground(new Color(0,0,64));
-		try
+		if (args.length > 2)
 		{
-			main.setIconImage(ImageIO.read(main.getClass().getResourceAsStream("/org/recompile/icon.png")));	
+			lcdWidth = Integer.parseInt(args[1]);
+			lcdHeight = Integer.parseInt(args[2]);
+			System.out.println("W H from parameters provided");
+		} else if (args[0].contains("320x240")){
+			lcdWidth = 320;
+			lcdHeight = 240;
+		} else if (args[0].contains("240x320")) {
+			lcdWidth = 240;
+			lcdHeight = 320;
 		}
-		catch (Exception e) { }
-
-		main.addWindowListener(new WindowAdapter()
-		{
-			public void windowClosing(WindowEvent e)
-			{
-				System.exit(0);
-			}
-		});
-
-		// Setup Device //
-
 		Mobile.setPlatform(new MobilePlatform(lcdWidth, lcdHeight));
 
-		lcd = new LCD();
-		lcd.setFocusable(true);
-		main.add(lcd);
+//		config = new Config();
+//		config.onChange = new Runnable() { public void run() { settingsChanged(); } };
 
-		config = new Config();
-		config.onChange = new Runnable() { public void run() { settingsChanged(); } };
+	//	lcdWidth = Integer.parseInt(config.settings.get("width"));
+	//	lcdHeight = Integer.parseInt(config.settings.get("height"));
 
-		Mobile.getPlatform().setPainter(new Runnable()
+		painter = new Runnable()
 		{
 			public void run()
 			{
-				lcd.paint(lcd.getGraphics());
+				try
+				{
+					// Send Frame to SDL interface
+					int[] data = Mobile.getPlatform().getLCD().getRGB(0, 0, lcdWidth, lcdHeight, null, 0, lcdWidth);
+					byte[] frame = new byte[data.length * 3];
+					int cb = 0;
+					for(int i = 0; i < data.length; i++)
+					{
+						frame[cb + 0] = (byte)(data[i] >> 16);
+						frame[cb + 1] = (byte)(data[i] >> 8);
+						frame[cb + 2] = (byte)(data[i]);
+						cb += 3;
+					}
+					sdl.frame.write(frame);
+				}
+				catch (Exception e) { }
 			}
-		});
+		};
 
 		Mobile.setDisplay(new Display());
+		Mobile.getPlatform().setPainter(painter);
 
 		Mobile.getPlatform().startEventQueue();		
 
 		Mobile.getPlatform().setSystemPropertyOverrides(systemPropertyOverrides);
+		System.setProperty("microedition.sensor.version", "1");
+		System.setProperty("microedition.platform", "Nokia 6233");
+		System.setProperty("microedition.configuration", "CDLC1.1");
+		System.setProperty("microedition.profiles", "MIDP2.0");
+		System.setProperty("microedition.m3g.version", "1.1");
+		System.setProperty("microedition.media.version", "1.0");
+		System.setProperty("supports.mixing", "true");
+		System.setProperty("supports.audio.capture", "false");
+		System.setProperty("supports.video.capture", "false");
+		System.setProperty("supports.recording", "false");
+		System.setProperty("microedition.pim.version", "1.0");
+		System.setProperty("microedition.io.file.FileConnection.version", "1.0");
+		//System.setProperty("microedition.locale", locale.toLowerCase());
+		System.setProperty("microedition.encoding", "ISO-8859-1");
+		//System.setProperty("user.home", Environment.getExternalStorageDirectory().getAbsolutePath());
 
-		lcd.addKeyListener(new KeyListener()
+		String file = getFormattedLocation(args[0]);
+		System.out.println(file);
+
+		if(Mobile.getPlatform().load(args[0], appProperties, mainClassOverride))
 		{
-			public void keyPressed(KeyEvent e)
-			{
-				int keycode = e.getKeyCode();
-				int mobikey = getMobileKey(keycode);
+	//		config.init(configOverrides);
 
-				if (config.isRunning) {
-					config.keyPressed(mobikey, keycode);
-					return;
-				}
-
-				int mobikeyN = (mobikey + 64) & 0x7F; //Normalized value for indexing the pressedKeys array
-				
-				switch(keycode) // Handle emulator control keys
-				{
-					// Config //
-					case KeyEvent.VK_ESCAPE:
-						Mobile.getPlatform().dropQueuedEvents();
-						config.start();
-						return;
-
-					case KeyEvent.VK_PLUS:
-					case KeyEvent.VK_ADD:
-						scaleFactor++;
-						main.setSize(lcdWidth * scaleFactor + xborder, lcdHeight * scaleFactor + yborder);
-					break;
-					case KeyEvent.VK_MINUS:
-					case KeyEvent.VK_SUBTRACT:
-						if( scaleFactor > 1 )
-						{
-							scaleFactor--;
-							main.setSize(lcdWidth * scaleFactor + xborder, lcdHeight * scaleFactor + yborder);
-						}
-					break;
-					case KeyEvent.VK_C:
-						if(e.isControlDown())
-						{
-							ScreenShot.takeScreenshot(false);
-						}
-					break;
-				}
-								
-
-				
-				if (pressedKeys[mobikeyN] == false)
-				{
-					//~ System.out.println("keyPressed:  " + Integer.toString(mobikey));
-					Mobile.getPlatform().keyPressed(mobikey, e);
-				}
-				else
-				{
-					//~ System.out.println("keyRepeated:  " + Integer.toString(mobikey));
-					Mobile.getPlatform().keyRepeated(mobikey, e);
-				}
-
-				if (mobikey != 0) {
-					pressedKeys[mobikeyN] = true;
-				}
-				
-			}
-
-			public void keyReleased(KeyEvent e)
-			{
-				int keycode = e.getKeyCode();
-				int mobikey = getMobileKey(keycode);
-
-				if (config.isRunning) {
-					config.keyReleased(mobikey, keycode);
-					return;
-				}
-				
-				int mobikeyN = (mobikey + 64) & 0x7F; //Normalized value for indexing the pressedKeys array
-				
-				if (mobikey != 0) {
-					pressedKeys[mobikeyN] = false;
-				}
-								
-				//~ System.out.println("keyReleased: " + Integer.toString(mobikey));
-				Mobile.getPlatform().keyReleased(mobikey, e);
-			}
-
-			public void keyTyped(KeyEvent e) { }
-
-		});
-
-		lcd.addMouseListener(new MouseListener()
-		{
-			public void mousePressed(MouseEvent e)
-			{
-				int x = (int)((e.getX()-lcd.cx) * lcd.scalex);
-				int y = (int)((e.getY()-lcd.cy) * lcd.scaley);
-
-				// Adjust the pointer coords if the screen is rotated, same for mouseReleased
-				if(rotateDisplay)
-				{
-					x = (int)((lcd.ch-(e.getY()-lcd.cy)) * lcd.scaley);
-					y = (int)((e.getX()-lcd.cx) * lcd.scalex);
-				}
-
-				Mobile.getPlatform().pointerPressed(x, y);				
-			}
-
-			public void mouseReleased(MouseEvent e)
-			{
-				int x = (int)((e.getX()-lcd.cx) * lcd.scalex);
-				int y = (int)((e.getY()-lcd.cy) * lcd.scaley);
-
-				if(rotateDisplay)
-				{
-					x = (int)((lcd.ch-(e.getY()-lcd.cy)) * lcd.scaley);
-					y = (int)((e.getX()-lcd.cx) * lcd.scalex);
-				}
-
-				Mobile.getPlatform().pointerReleased(x, y);				
-			}
-
-			public void mouseExited(MouseEvent e) { }
-			public void mouseEntered(MouseEvent e) { }
-			public void mouseClicked(MouseEvent e) { }
-
-		});
-
-		lcd.addMouseMotionListener(new MouseMotionAdapter() 
-		{
-			public void mouseDragged(MouseEvent e)
-			{
-				int x = (int)((e.getX()-lcd.cx) * lcd.scalex);
-				int y = (int)((e.getY()-lcd.cy) * lcd.scaley);
-
-				if(rotateDisplay)
-				{
-					x = (int)((lcd.ch-(e.getY()-lcd.cy)) * lcd.scaley);
-					y = (int)((e.getX()-lcd.cx) * lcd.scalex);
-				}
-				
-				Mobile.getPlatform().pointerDragged(x, y);				
-			}
-		});
-
-		main.addComponentListener(new ComponentAdapter()
-		{
-			public void componentResized(ComponentEvent e)
-			{
-				resize();
-			}
-		});
-
-		main.setVisible(true);
-		main.pack();
-
-		resize();
-		main.setSize(lcdWidth*scaleFactor+xborder, lcdHeight*scaleFactor+yborder);
-
-		if (fileName == null)
-		{
-			FileDialog t = new FileDialog(main, "Open JAR/JAD File", FileDialog.LOAD);
-			t.setFilenameFilter(new FilenameFilter()
-			{
-				public boolean accept(File dir, String name)
-				{
-					//System.out.println(name);
-					return name.toLowerCase().endsWith(".jar") || name.toLowerCase().endsWith(".jad");
-				}
-			});
-			t.setVisible(true);
-			fileName = t.getDirectory()+File.separator+t.getFile();
-		}
-		if(Mobile.getPlatform().load(fileName, appProperties, mainClassOverride))
-		{
-			config.init(configOverrides);
-
-			settingsChanged();
+			sdl = new SDL();
+			sdl.start(args);
 
 			Mobile.getPlatform().runJar();
 		}
 		else
 		{
 			System.out.println("Couldn't load jar...");
+			System.exit(0);
 		}
+		Mobile.nokia = true;
 	}
 
 	private static void processKeyValuePairs(String[] args, Map<String, String> map, int index) {
@@ -384,6 +175,7 @@ public class FreeJ2ME
 
 		limitFPS = Integer.parseInt(config.settings.get("fps"));
 		if(limitFPS>0) { limitFPS = 1000 / limitFPS; }
+		System.out.println("settingsChanged..." + w);
 
 		String sound = config.settings.get("sound");
 		Mobile.sound = false;
@@ -434,8 +226,8 @@ public class FreeJ2ME
 
 			Mobile.getPlatform().resizeLCD(w, h);
 			
-			resize();
-			main.setSize(lcdWidth*scaleFactor+xborder , lcdHeight*scaleFactor+yborder);
+//			resize();
+///			main.setSize(lcdWidth*scaleFactor+xborder , lcdHeight*scaleFactor+yborder);
 		}
 		else 
 		{
@@ -444,8 +236,8 @@ public class FreeJ2ME
 
 			Mobile.getPlatform().resizeLCD(w, h);
 
-			resize();
-			main.setSize(lcdWidth*scaleFactor+xborder , lcdHeight*scaleFactor+yborder);
+//			resize();
+//			main.setSize(lcdWidth*scaleFactor+xborder , lcdHeight*scaleFactor+yborder);
 		}
 
 		if (Mobile.nokia) {
@@ -459,195 +251,302 @@ public class FreeJ2ME
 		}
 	}
 
-	private int getMobileKey(int keycode)
+	private static String getFormattedLocation(String loc)
 	{
-		if(useNokiaControls)
+		if (loc.startsWith("file://") || loc.startsWith("http://"))
+			return loc;
+
+		File file = new File(loc);
+		if(!file.exists() || file.isDirectory())
 		{
-			switch(keycode)
-			{
-				case KeyEvent.VK_UP: return Mobile.NOKIA_UP;
-				case KeyEvent.VK_DOWN: return Mobile.NOKIA_DOWN;
-				case KeyEvent.VK_LEFT: return Mobile.NOKIA_LEFT;
-				case KeyEvent.VK_RIGHT: return Mobile.NOKIA_RIGHT;
-				case KeyEvent.VK_ENTER: return Mobile.NOKIA_SOFT3;
-			}
+			System.out.println("File not found...");
+			System.exit(0);
 		}
 
-		if(useSiemensControls)
-		{
-			switch(keycode)
-			{
-				case KeyEvent.VK_UP: return Mobile.SIEMENS_UP;
-				case KeyEvent.VK_DOWN: return Mobile.SIEMENS_DOWN;
-				case KeyEvent.VK_LEFT: return Mobile.SIEMENS_LEFT;
-				case KeyEvent.VK_RIGHT: return Mobile.SIEMENS_RIGHT;
-				case KeyEvent.VK_F1:
-				case KeyEvent.VK_Q: 
-					return Mobile.SIEMENS_SOFT1;
-				case KeyEvent.VK_F2:
-				case KeyEvent.VK_W:
-					return Mobile.SIEMENS_SOFT2;
-				case KeyEvent.VK_ENTER: return Mobile.SIEMENS_FIRE;
-			}
-		}
-
-		if(useMotorolaControls)
-		{
-			switch(keycode)
-			{
-				case KeyEvent.VK_UP: return Mobile.MOTOROLA_UP;
-				case KeyEvent.VK_DOWN: return Mobile.MOTOROLA_DOWN;
-				case KeyEvent.VK_LEFT: return Mobile.MOTOROLA_LEFT;
-				case KeyEvent.VK_RIGHT: return Mobile.MOTOROLA_RIGHT;
-				case KeyEvent.VK_F1:
-				case KeyEvent.VK_Q:
-					return Mobile.MOTOROLA_SOFT1;
-				case KeyEvent.VK_F2:
-				case KeyEvent.VK_W:
-					return Mobile.MOTOROLA_SOFT2;
-				case KeyEvent.VK_ENTER: return Mobile.MOTOROLA_FIRE;
-			}
-		}
-
-		switch(keycode)
-		{
-			case KeyEvent.VK_0: return Mobile.KEY_NUM0;
-			case KeyEvent.VK_1: return Mobile.KEY_NUM1;
-			case KeyEvent.VK_2: return Mobile.KEY_NUM2;
-			case KeyEvent.VK_3: return Mobile.KEY_NUM3;
-			case KeyEvent.VK_4: return Mobile.KEY_NUM4;
-			case KeyEvent.VK_5: return Mobile.KEY_NUM5;
-			case KeyEvent.VK_6: return Mobile.KEY_NUM6;
-			case KeyEvent.VK_7: return Mobile.KEY_NUM7;
-			case KeyEvent.VK_8: return Mobile.KEY_NUM8;
-			case KeyEvent.VK_9: return Mobile.KEY_NUM9;
-			case KeyEvent.VK_ASTERISK: return Mobile.KEY_STAR;
-			case KeyEvent.VK_NUMBER_SIGN: return Mobile.KEY_POUND;
-
-			case KeyEvent.VK_NUMPAD0: return Mobile.KEY_NUM0;
-			case KeyEvent.VK_NUMPAD7: return Mobile.KEY_NUM1;
-			case KeyEvent.VK_NUMPAD8: return Mobile.KEY_NUM2;
-			case KeyEvent.VK_NUMPAD9: return Mobile.KEY_NUM3;
-			case KeyEvent.VK_NUMPAD4: return Mobile.KEY_NUM4;
-			case KeyEvent.VK_NUMPAD5: return Mobile.KEY_NUM5;
-			case KeyEvent.VK_NUMPAD6: return Mobile.KEY_NUM6;
-			case KeyEvent.VK_NUMPAD1: return Mobile.KEY_NUM7;
-			case KeyEvent.VK_NUMPAD2: return Mobile.KEY_NUM8;
-			case KeyEvent.VK_NUMPAD3: return Mobile.KEY_NUM9;
-
-			case KeyEvent.VK_UP: return Mobile.KEY_NUM2;
-			case KeyEvent.VK_DOWN: return Mobile.KEY_NUM8;
-			case KeyEvent.VK_LEFT: return Mobile.KEY_NUM4;
-			case KeyEvent.VK_RIGHT: return Mobile.KEY_NUM6;
-
-			case KeyEvent.VK_ENTER: return Mobile.KEY_NUM5;
-
-			case KeyEvent.VK_F1:
-			case KeyEvent.VK_Q:
-				return Mobile.NOKIA_SOFT1;
-			case KeyEvent.VK_F2:
-			case KeyEvent.VK_W:
-				return Mobile.NOKIA_SOFT2;
-			case KeyEvent.VK_E: return Mobile.KEY_STAR;
-			case KeyEvent.VK_R: return Mobile.KEY_POUND;
-
-			case KeyEvent.VK_A: return -1;
-			case KeyEvent.VK_Z: return -2;
-
-			case KeyEvent.VK_SPACE: return Mobile.XKEY_SELECT;
-			case KeyEvent.VK_F: return Mobile.XKEY_SOFT1;
-			case KeyEvent.VK_G: return Mobile.XKEY_SOFT1;
-			case KeyEvent.VK_H: return Mobile.XKEY_SOFT1;
-
-		}
-		return 0;
+		return "file://" + file.getAbsolutePath();
 	}
 
-	private void resize()
+	private class SDL
 	{
-		xborder = main.getInsets().left+main.getInsets().right;
-		yborder = main.getInsets().top+main.getInsets().bottom;
+		private Timer keytimer;
+		private TimerTask keytask;
 
-		double vw = (main.getWidth()-xborder)*1;
-		double vh = (main.getHeight()-yborder)*1;
+		private Process proc;
+		private InputStream keys;
+		public OutputStream frame;
 
-		double nw = lcdWidth;
-		double nh = lcdHeight;
-
-		nw = vw;
-		nh = nw*((double)lcdHeight/(double)lcdWidth);
-
-		if(nh>vh)
-		{
-			nh = vh;
-			nw = nh*((double)lcdWidth/(double)lcdHeight);
-		}
-
-		lcd.updateScale((int)nw, (int)nh);
-	}
-
-	private class LCD extends Canvas
-	{
-		public int cx=0;
-		public int cy=0;
-		public int cw=240;
-		public int ch=320;
-
-		public double scalex=1;
-		public double scaley=1;
-
-		public void updateScale(int vw, int vh)
-		{
-			cx = (this.getWidth()-vw)/2;
-			cy = (this.getHeight()-vh)/2;
-			cw = vw;
-			ch = vh;
-			scalex = (double)lcdWidth/(double)vw;
-			scaley = (double)lcdHeight/(double)vh;
-		}
-
-		public void paint(Graphics g)
+		public void start(String args[])
 		{
 			try
 			{
-				Graphics2D cgc = (Graphics2D)this.getGraphics();
-				if (config.isRunning)
-				{
-					if(!rotateDisplay)
-					{
-						g.drawImage(config.getLCD(), cx, cy, cw, ch, null);
-					}
-					else
-					{
-						// If rotated, simply redraw the config menu with different width and height
-						g.drawImage(config.getLCD(), cy, cx, cw, ch, null);
-					}
-				}
+				String[] new_args = new String[5];
+				new_args[0] = "/storage/sdl_interface";
+				new_args[1] = String.valueOf(lcdWidth);
+				new_args[2] = String.valueOf(lcdHeight);
+				new_args[3] = "-b";
+				if (lcdWidth > lcdHeight)
+					new_args[4] = "/storage/roms/bezels/java/java_v.png";
 				else
-				{
-					if(!rotateDisplay)
-					{
-						g.drawImage(Mobile.getPlatform().getLCD(), cx, cy, cw, ch, null);
-					}
-					else
-					{
-						// Rotate the FB 90 degrees counterclockwise with an adjusted pivot
-						cgc.rotate(Math.toRadians(-90), ch/2, ch/2);
-						// Draw the rotated FB with adjusted cy and cx values
-						cgc.drawImage(Mobile.getPlatform().getLCD(), 0, cx, ch, cw, null);
-					}
+					new_args[4] = "/storage/roms/bezels/java/java_h.png";
+				//String new_args[] = {"/storage/sdl_interface", String.valueOf(lcdWidth), String.valueOf(lcdHeight), "-b", "/storage/roms/bezels/java/java_h.png"};
+				//System.out.println(args[0] + args[1] + args[2]);
 
-					if(limitFPS>0)
-					{
-						// this is of course a simplification
-						Thread.sleep(limitFPS);						
-					}
-				}
+				proc = new ProcessBuilder(new_args).start();
+
+				keys = proc.getInputStream();
+				frame = proc.getOutputStream();
+
+				keytimer = new Timer();
+				keytask = new SDLKeyTimerTask();
+				keytimer.schedule(keytask, 0, 5);
 			}
 			catch (Exception e)
 			{
+				System.out.println("Failed to start sdl_interface");
 				System.out.println(e.getMessage());
+				System.exit(0);
 			}
 		}
-	}
+
+		public void stop()
+		{
+			proc.destroy();
+			keytimer.cancel();
+		}
+
+		private class SDLKeyTimerTask extends TimerTask
+		{
+			private int bin;
+			private byte[] din = new byte[6];
+			private int count = 0;
+			private int code;
+			private int mobikey;
+			private int mobikeyN;
+
+			public void run()
+			{
+				try // to read keys
+				{
+					while(true)
+					{
+						bin = keys.read();
+						if(bin==-1) { return; }
+						if(bin != 16 && bin != 17 && count == 0)
+							continue;
+						//System.out.print(" "+bin);
+						din[count] = (byte)(bin & 0xFF);
+						count++;
+						if (count==5)
+						{
+							count = 0;
+							code = (din[1]<<24) | (din[2]<<16) | (din[3]<<8) | din[4];
+							//System.out.println(" ("+code+") <- Key");
+							mobikey = getMobileKeyRGB30(code);
+							/*
+							switch(din[3] >>> 1)
+							{
+								case 0: mobikey = getMobileKey(code); break;
+								case 1: mobikey = getMobileKeyPad(code); break;
+								case 2: mobikey = getMobileKeyJoy(code); break;
+								default: continue;
+							}*/
+							//System.out.println(" ("+ mobikey +") <- mobikey");
+							if (mobikey == 0) //Ignore events from keys not mapped to a phone keypad key
+							{
+								return; 
+							}
+							mobikeyN = (mobikey + 64) & 0x7F; //Normalized value for indexing the pressedKeys array
+							if (din[0] == 16)
+							{
+								//Key released
+								//~ System.out.println("keyReleased:  " + Integer.toString(mobikey));
+								Mobile.getPlatform().keyReleased(mobikey, null);
+								pressedKeys[mobikeyN] = false;
+							}
+							else if (din[0] == 17)
+							{
+								//Key pressed or repeated
+								if (pressedKeys[mobikeyN] == false)
+								{
+									//~ System.out.println("keyPressed:  " + Integer.toString(mobikey));
+									Mobile.getPlatform().keyPressed(mobikey, null);
+								}
+								else
+								{
+									//~ System.out.println("keyRepeated:  " + Integer.toString(mobikey));
+									Mobile.getPlatform().keyRepeated(mobikey, null);
+								}
+								pressedKeys[mobikeyN] = true;
+							}
+						}
+					}
+				}
+				catch (Exception e) { }
+			}
+		} // timer
+
+		private int getMobileKeyRGB30(int keycode)
+		{
+			switch(keycode & 0xffff)
+			{
+				case 2: return Mobile.KEY_NUM0;
+				case 4: return Mobile.KEY_NUM1;
+				case 13: return Mobile.KEY_NUM2;
+				case 5: return Mobile.KEY_NUM3;
+				case 15: return Mobile.KEY_NUM4;
+				case 3: return Mobile.KEY_NUM5;
+				case 16: return Mobile.KEY_NUM6;
+				case 6: return Mobile.KEY_NUM7;
+				case 14: return Mobile.KEY_NUM8;
+				case 7: return Mobile.KEY_NUM9;
+				case 0: return Mobile.KEY_STAR;
+				case 1: return Mobile.KEY_POUND;
+
+				case 8: return Mobile.NOKIA_SOFT1;
+				case 9: return Mobile.NOKIA_SOFT2;
+
+				//case 4: return Mobile.GAME_A;
+				//case 5: return Mobile.GAME_B;
+				//case 6: return Mobile.NOKIA_END;
+				//case 7: return Mobile.NOKIA_SEND;
+
+				// ESC - Quit
+				case 11: System.exit(0);
+
+				case 12: ScreenShot.takeScreenshot(false);
+
+				/*
+				case : return Mobile.GAME_UP;
+				case : return Mobile.GAME_DOWN;
+				case : return Mobile.GAME_LEFT;
+				case : return Mobile.GAME_RIGHT;
+				case : return Mobile.GAME_FIRE;
+
+				case : return Mobile.GAME_A;
+				case : return Mobile.GAME_B;
+				case : return Mobile.GAME_C;
+				case : return Mobile.GAME_D;
+
+				// Nokia //
+				case : return Mobile.NOKIA_UP;
+				case : return Mobile.NOKIA_DOWN;
+				case : return Mobile.NOKIA_LEFT;
+				case : return Mobile.NOKIA_RIGHT;
+				case : return Mobile.NOKIA_SOFT1;
+				case : return Mobile.NOKIA_SOFT2;
+				case : return Mobile.NOKIA_SOFT3;
+				*/
+			}
+			return Mobile.KEY_NUM5;
+		}
+
+		private int getMobileKey(int keycode)
+		{
+			switch(keycode)
+			{
+				case 0x30: return Mobile.KEY_NUM0;
+				case 0x31: return Mobile.KEY_NUM1;
+				case 0x32: return Mobile.KEY_NUM2;
+				case 0x33: return Mobile.KEY_NUM3;
+				case 0x34: return Mobile.KEY_NUM4;
+				case 0x35: return Mobile.KEY_NUM5;
+				case 0x36: return Mobile.KEY_NUM6;
+				case 0x37: return Mobile.KEY_NUM7;
+				case 0x38: return Mobile.KEY_NUM8;
+				case 0x39: return Mobile.KEY_NUM9;
+				case 0x2A: return Mobile.KEY_STAR;
+				case 0x23: return Mobile.KEY_POUND;
+
+				case 0x40000052: return Mobile.KEY_NUM2;
+				case 0x40000051: return Mobile.KEY_NUM8;
+				case 0x40000050: return Mobile.KEY_NUM4;
+				case 0x4000004F: return Mobile.KEY_NUM6;
+
+				case 0x0D: return Mobile.KEY_NUM5;
+
+				case 0x71: return Mobile.NOKIA_SOFT1;
+				case 0x77: return Mobile.NOKIA_SOFT2;
+				case 0x65: return Mobile.KEY_STAR;
+				case 0x72: return Mobile.KEY_POUND;
+
+
+				// Inverted Num Pad
+				case 0x40000059: return Mobile.KEY_NUM7; // SDLK_KP_1
+				case 0x4000005A: return Mobile.KEY_NUM8; // SDLK_KP_2
+				case 0x4000005B: return Mobile.KEY_NUM9; // SDLK_KP_3
+				case 0x4000005C: return Mobile.KEY_NUM4; // SDLK_KP_4
+				case 0x4000005D: return Mobile.KEY_NUM5; // SDLK_KP_5
+				case 0x4000005E: return Mobile.KEY_NUM6; // SDLK_KP_6
+				case 0x4000005F: return Mobile.KEY_NUM1; // SDLK_KP_7
+				case 0x40000060: return Mobile.KEY_NUM2; // SDLK_KP_8
+				case 0x40000061: return Mobile.KEY_NUM3; // SDLK_KP_9
+				case 0x40000062: return Mobile.KEY_NUM0; // SDLK_KP_0
+
+
+				// F4 - Quit
+				case -1: System.exit(0);
+
+				// ESC - Quit
+				case 0x1B: System.exit(0);
+
+				case 112: ScreenShot.takeScreenshot(true);
+
+				/*
+				case : return Mobile.GAME_UP;
+				case : return Mobile.GAME_DOWN;
+				case : return Mobile.GAME_LEFT;
+				case : return Mobile.GAME_RIGHT;
+				case : return Mobile.GAME_FIRE;
+
+				case : return Mobile.GAME_A;
+				case : return Mobile.GAME_B;
+				case : return Mobile.GAME_C;
+				case : return Mobile.GAME_D;
+
+				// Nokia //
+				case : return Mobile.NOKIA_UP;
+				case : return Mobile.NOKIA_DOWN;
+				case : return Mobile.NOKIA_LEFT;
+				case : return Mobile.NOKIA_RIGHT;
+				case : return Mobile.NOKIA_SOFT1;
+				case : return Mobile.NOKIA_SOFT2;
+				case : return Mobile.NOKIA_SOFT3;
+				*/
+			}
+			return 0;
+		}
+
+		private int getMobileKeyPad(int keycode)
+		{
+			switch(keycode)
+			{
+				//  A:1 B:0 X: 3 Y:2 L:4 R:5 St:6 Sl:7
+				case 0x03: return Mobile.KEY_NUM0;
+				case 0x02: return Mobile.KEY_NUM5;
+				case 0x00: return Mobile.KEY_STAR;
+				case 0x01: return Mobile.KEY_POUND;
+
+				case 0x04: return Mobile.KEY_NUM1;
+				case 0x05: return Mobile.KEY_NUM3;
+
+				case 0x06: return Mobile.NOKIA_SOFT1;
+				case 0x07: return Mobile.NOKIA_SOFT2;
+			}
+			return 0;
+		}
+
+		private int getMobileKeyJoy(int keycode)
+		{
+			switch(keycode)
+			{
+				case 0x04: return Mobile.KEY_NUM2;
+				case 0x01: return Mobile.KEY_NUM4;
+				case 0x02: return Mobile.KEY_NUM6;
+				case 0x08: return Mobile.KEY_NUM8;
+			}
+			return 0;
+		}
+
+	} // sdl
+
 }

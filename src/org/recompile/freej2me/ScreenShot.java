@@ -36,7 +36,7 @@ public class ScreenShot
 		{
 			Date date = new Date();
 			String fileName;
-			SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH-mm-ss");
+			SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
 
 			if (saveToHomeDir == true)
 			{
@@ -55,7 +55,7 @@ public class ScreenShot
 					System.out.println("Problem Creating Screenshot Path "+ screenshotPath);
 					System.out.println(e.getMessage());
 				}
-				fileName = screenshotPath + "/Screenshot from " + 
+				fileName = screenshotPath + "/Screenshot_from_" +
 							dateFormat.format(date) + ".png";
 			}
 
