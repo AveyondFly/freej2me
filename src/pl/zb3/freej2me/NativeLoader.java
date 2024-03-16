@@ -49,6 +49,7 @@ public class NativeLoader {
             }
 
             String sourceLibraryDir = String.format("natives/%s-%s", osName, arch);
+		System.out.println(TAG+": extracting native libraries from "+sourceLibraryDir);
             File tempDir = createTempDirectory(osName.equals("windows"));
 
             System.out.println(TAG+": extracting native libraries to "+tempDir);

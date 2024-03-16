@@ -280,14 +280,14 @@ public class FreeJ2ME
 			try
 			{
 				String[] new_args = new String[5];
-				new_args[0] = "/storage/sdl_interface";
+				new_args[0] = "/usr/bin/sdl_interface";
 				new_args[1] = String.valueOf(lcdWidth);
 				new_args[2] = String.valueOf(lcdHeight);
 				new_args[3] = "-b";
 				if (lcdWidth > lcdHeight)
-					new_args[4] = "/storage/roms/bezels/java/java_v.png";
-				else
 					new_args[4] = "/storage/roms/bezels/java/java_h.png";
+				else
+					new_args[4] = "/storage/roms/bezels/java/java_v.png";
 				//String new_args[] = {"/storage/sdl_interface", String.valueOf(lcdWidth), String.valueOf(lcdHeight), "-b", "/storage/roms/bezels/java/java_h.png"};
 				//System.out.println(args[0] + args[1] + args[2]);
 
