@@ -55,7 +55,7 @@ public class FreeJ2ME
 	private int lcdWidth;
 	private int lcdHeight;
 	private Config config;
-	private boolean useNokiaControls = false;
+	private boolean useNokiaControls = true;
 	private boolean useSiemensControls = false;
 	private boolean useMotorolaControls = false;
 	private boolean rotateDisplay = false;
@@ -79,12 +79,21 @@ public class FreeJ2ME
 			lcdWidth = Integer.parseInt(args[1]);
 			lcdHeight = Integer.parseInt(args[2]);
 			System.out.println("W H from parameters provided");
-		} else if (args[0].contains("320x240")){
-			lcdWidth = 320;
-			lcdHeight = 240;
-		} else if (args[0].contains("240x320")) {
-			lcdWidth = 240;
-			lcdHeight = 320;
+		} else {
+			if (args[0].contains("320x240")) {
+				lcdWidth = 320;
+				lcdHeight = 240;
+			} else if (args[0].contains("240x320")) {
+				lcdWidth = 240;
+				lcdHeight = 320;
+			}
+
+			if (args[0].contains("motorola"))
+				useNokiaControls = true;
+			else if (args[0].contains("siemens"))
+				useSiemensControls = true;
+			else
+				useNokiaControls = true;
 		}
 		Mobile.setPlatform(new MobilePlatform(lcdWidth, lcdHeight));
 
@@ -156,7 +165,19 @@ public class FreeJ2ME
 			System.out.println("Couldn't load jar...");
 			System.exit(0);
 		}
-		Mobile.nokia = true;
+		if (useNokiaControls)
+			Mobile.nokia = true;
+		else if (useSiemensControls)
+			Mobile.siemens = true;
+		if (Mobile.nokia) {
+			Mobile.getPlatform().addSystemProperty("microedition.platform", "Nokia6233/05.10");
+		} else if (Mobile.sonyEricsson) {
+			Mobile.getPlatform().addSystemProperty("microedition.platform", "SonyEricssonK750/JAVASDK");
+			Mobile.getPlatform().addSystemProperty("com.sonyericsson.imei", "IMEI 00460101-501594-5-00");
+		} else if (Mobile.siemens) {
+			Mobile.getPlatform().addSystemProperty("com.siemens.OSVersion", "11");
+			Mobile.getPlatform().addSystemProperty("com.siemens.IMEI", "000000000000000");
+		}
 	}
 
 	private static void processKeyValuePairs(String[] args, Map<String, String> map, int index) {
