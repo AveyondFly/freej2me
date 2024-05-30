@@ -95,6 +95,7 @@ public class FreeJ2ME
 			else
 				useNokiaControls = true;
 		}
+		appProperties.put("copyRight", "0");
 		Mobile.setPlatform(new MobilePlatform(lcdWidth, lcdHeight));
 
 //		config = new Config();
@@ -129,7 +130,7 @@ public class FreeJ2ME
 		Mobile.setDisplay(new Display());
 		Mobile.getPlatform().setPainter(painter);
 
-		Mobile.getPlatform().startEventQueue();		
+		Mobile.getPlatform().startEventQueue();
 
 		Mobile.getPlatform().setSystemPropertyOverrides(systemPropertyOverrides);
 		System.setProperty("microedition.sensor.version", "1");
@@ -146,6 +147,15 @@ public class FreeJ2ME
 		System.setProperty("microedition.io.file.FileConnection.version", "1.0");
 		//System.setProperty("microedition.locale", locale.toLowerCase());
 		System.setProperty("microedition.encoding", "ISO-8859-1");
+
+		System.setProperty("device.imei", "000000000000000");
+		System.setProperty("com.siemens.IMEI", "000000000000000");
+		System.setProperty("com.sonyericsson.imei: IMEI", "00460101-501594-5-00");
+		System.setProperty("com.nokia.mid.impl.isa.visual_radio_operator_id", "0");
+		System.setProperty("com.nokia.mid.impl.isa.visual_radio_channel_freq", "0");
+		System.setProperty("com.nokia.mid.ui.DirectGraphics.PIXEL_FORMAT", "565");
+		System.setProperty("wireless.messaging.sms.smsc", "+8613800010000");
+
 		//System.setProperty("user.home", Environment.getExternalStorageDirectory().getAbsolutePath());
 
 		String file = getFormattedLocation(args[0]);
@@ -301,7 +311,7 @@ public class FreeJ2ME
 			try
 			{
 				String[] new_args = new String[5];
-				new_args[0] = "/usr/bin/sdl_interface";
+				new_args[0] = "/storage/sdl_interface";
 				new_args[1] = String.valueOf(lcdWidth);
 				new_args[2] = String.valueOf(lcdHeight);
 				new_args[3] = "-b";
