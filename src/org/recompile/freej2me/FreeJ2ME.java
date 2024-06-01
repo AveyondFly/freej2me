@@ -86,6 +86,21 @@ public class FreeJ2ME
 			} else if (args[0].contains("240x320")) {
 				lcdWidth = 240;
 				lcdHeight = 320;
+			} else if (args[0].contains("128x128")) {
+				lcdWidth = 128;
+				lcdHeight = 128;
+			} else if (args[0].contains("176x208")) {
+				lcdWidth = 176;
+				lcdHeight = 208;
+			} else if (args[0].contains("176x220")) {
+				lcdWidth = 176;
+				lcdHeight = 220;
+			} else if (args[0].contains("360x640")) {
+				lcdWidth = 360;
+				lcdHeight = 640;
+			} else if (args[0].contains("640x360")) {
+				lcdWidth = 640;
+				lcdHeight = 360;
 			}
 
 			if (args[0].contains("motorola"))

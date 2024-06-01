@@ -45,7 +45,7 @@ public class ScreenShot
 			}
 			else
 			{
-				String screenshotPath = Mobile.getPlatform().dataPath + "screenshots";
+				String screenshotPath = "/storage/roms/screenshots";
 				try
 				{
 					Files.createDirectories(Paths.get(screenshotPath));
