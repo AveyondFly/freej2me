@@ -109,6 +109,7 @@ public class Mobile
 	// interaction with internal UI shouldn't depend on the keyset used
 	// but only one key code is passed, so we need to convert it
 	public static int normalizeKey(int key) {
+/*
 		if (key == KEY_NUM2) {
 			return NOKIA_UP;
 		} else if (key == KEY_NUM8) {
@@ -154,7 +155,7 @@ public class Mobile
 				key = NOKIA_SOFT3;
 			}
 		}
-
+*/
 		return key;
 	}
 
